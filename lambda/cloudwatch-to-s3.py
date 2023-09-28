@@ -7,7 +7,7 @@ logs = boto3.client('logs')
 ssm = boto3.client('ssm')
 
 def lambda_handler(event, context):
-    extra_args = {}
+    extra_args = {'limit': 100, 'includeLinkedAccounts': True}
     log_groups = []
     log_groups_to_export = []
     
