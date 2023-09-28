@@ -83,7 +83,15 @@ resource "aws_iam_role_policy" "log_exporter" {
             "s3:GetBucketAcl"
         ],
         "Resource": "arn:aws:s3:::${var.cloudwatch_logs_export_bucket}"
-    }
+    },
+    {
+        "Sid": "",
+        "Effect": "Allow",
+        "Action": [
+            "sqs:*"
+        ],
+        "Resource": "*"
+    }    
   ]
 }
 EOF
