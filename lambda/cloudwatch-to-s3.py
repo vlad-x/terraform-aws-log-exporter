@@ -45,20 +45,20 @@ def lambda_handler(event, context):
             ssm_response = ssm.get_parameter(Name=ssm_parameter_name)
             ssm_value = ssm_response['Parameter']['Value']
         except ssm.exceptions.ParameterNotFound:
-            # try: 
-            #     print("    Setting retention policy to 30 days for %s" % log_group_name)
-            #     put_retention_policy_response = logs.put_retention_policy(
-            #         logGroupName=log_group_name,
-            #         retentionInDays=30
-            #     )
-            #     print("    Retention policy set to 30 days %s" % put_retention_policy_response)
-            # except Exception as e:
-            #     print("    Error setting retention policy %s" % getattr(e, 'message', repr(e)))
+            try: 
+                print("    Setting retention policy to 30 days for %s" % log_group_name)
+                put_retention_policy_response = logs.put_retention_policy(
+                    logGroupName=log_group_name,
+                    retentionInDays=30
+                )
+                print("    Retention policy set to 30 days %s" % put_retention_policy_response)
+            except Exception as e:
+                print("    Error setting retention policy %s" % getattr(e, 'message', repr(e)))
             ssm_value = "0"
         
         export_to_time = int(round(time.time() * 1000))
         
-        print("--> Exporting %s to %s" % (log_group_name, os.environ['S3_BUCKET']))
+        print("    Exporting %s to %s" % (log_group_name, os.environ['S3_BUCKET']))
         
         if export_to_time - int(ssm_value) < (24 * 60 * 60 * 1000):
             # Haven't been 24hrs from the last export of this log group
@@ -94,5 +94,3 @@ def lambda_handler(event, context):
                 print("    Error exporting %s: %s" % (log_group_name, getattr(e, 'message', repr(e))))
                 break
             
-if __name__ == '__main__':
-    lambda_handler(None, None)
