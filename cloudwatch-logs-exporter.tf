@@ -54,7 +54,7 @@ resource "aws_iam_role_policy" "log_exporter" {
         "ssm:GetParametersByPath",
         "ssm:PutParameter"
       ],
-      "Resource": "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/log-exporter-last-export/*",
+      "Resource": "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/log-exporter*",
       "Effect": "Allow"
     },
     {
@@ -91,7 +91,20 @@ resource "aws_iam_role_policy" "log_exporter" {
             "sqs:*"
         ],
         "Resource": "*"
-    }    
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "logs:DeleteRetentionPolicy",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams",
+        "logs:PutRetentionPolicy"
+      ],
+        "Resource": [
+          "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:*",
+          "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:*:log-stream:"
+      ]
+    }  
   ]
 }
 EOF
@@ -116,3 +129,72 @@ resource "aws_lambda_permission" "log_exporter" {
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.log_exporter.arn
 }
+
+
+resource "aws_s3_bucket_policy" "allow_access_to_write_logs" {
+  bucket = var.cloudwatch_logs_export_bucket
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "s3:GetBucketAcl",
+      "Effect": "Allow",
+      "Resource": "arn:aws:s3:::${var.cloudwatch_logs_export_bucket}",
+      "Principal": { "Service": "logs.${data.aws_region.current.name}.amazonaws.com" },
+      "Condition": {
+        "StringEquals": {
+          "aws:SourceAccount": [
+            "${data.aws_caller_identity.current.account_id}"
+          ]
+        },
+        "ArnLike": {
+          "aws:SourceArn": [
+            "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:*"
+          ]
+        }
+      }
+    },
+    {
+      "Action": "s3:PutObject" ,
+      "Effect": "Allow",
+      "Resource": "arn:aws:s3:::${var.cloudwatch_logs_export_bucket}/*",
+      "Principal": { "Service": "logs.${data.aws_region.current.name}.amazonaws.com" },
+      "Condition": {
+        "StringEquals": {
+          "s3:x-amz-acl": "bucket-owner-full-control",
+          "aws:SourceAccount": [
+            "${data.aws_caller_identity.current.account_id}"
+          ]
+        },
+        "ArnLike": {
+          "aws:SourceArn": [
+            "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:*"
+          ]
+        }
+      }
+    }
+  ]
+}
+EOF
+
+}
+
+# data "aws_iam_policy_document" "allow_access_from_another_account" {
+#   statement {
+#     principals {
+#       type        = "AWS"
+#       identifiers = ["123456789012"]
+#     }
+
+#     actions = [
+#       "s3:GetObject",
+#       "s3:ListBucket",
+#     ]
+
+#     resources = [
+#       aws_s3_bucket.example.arn,
+#       "${aws_s3_bucket.example.arn}/*",
+#     ]
+#   }
+# }

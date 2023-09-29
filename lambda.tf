@@ -29,6 +29,7 @@ resource "aws_lambda_function" "log_exporter" {
 
   environment {
     variables = {
+      SSM_LOG_GROUP_PARAM = var.ssm_logs_groups_to_export,
       S3_BUCKET   = var.cloudwatch_logs_export_bucket,
       AWS_ACCOUNT = data.aws_caller_identity.current.account_id
     }
