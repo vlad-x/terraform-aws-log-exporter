@@ -1,10 +1,3 @@
-
-data "archive_file" "log_exporter" {
-  type        = "zip"
-  source_file = "${path.module}/lambda/cloudwatch-to-s3.py"
-  output_path = "${path.module}/lambda/tmp/cloudwatch-to-s3.zip"
-}
-
 data "aws_region" "current" {}
 
 data "aws_caller_identity" "current" {}
@@ -13,7 +6,7 @@ resource "random_string" "random" {
   length  = 8
   special = false
   upper   = false
-  number  = false
+  numeric = false
 }
 
 resource "aws_iam_role" "log_exporter" {
@@ -61,7 +54,7 @@ resource "aws_iam_role_policy" "log_exporter" {
         "ssm:GetParametersByPath",
         "ssm:PutParameter"
       ],
-      "Resource": "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/log-exporter-last-export/*",
+      "Resource": "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/log-exporter*",
       "Effect": "Allow"
     },
     {
@@ -90,28 +83,31 @@ resource "aws_iam_role_policy" "log_exporter" {
             "s3:GetBucketAcl"
         ],
         "Resource": "arn:aws:s3:::${var.cloudwatch_logs_export_bucket}"
-    }
+    },
+    {
+        "Sid": "",
+        "Effect": "Allow",
+        "Action": [
+            "sqs:*"
+        ],
+        "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "logs:DeleteRetentionPolicy",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams",
+        "logs:PutRetentionPolicy"
+      ],
+        "Resource": [
+          "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:*",
+          "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:*:log-stream:"
+      ]
+    }  
   ]
 }
 EOF
-}
-
-resource "aws_lambda_function" "log_exporter" {
-  filename         = data.archive_file.log_exporter.output_path
-  function_name    = "log-exporter-${random_string.random.result}"
-  role             = aws_iam_role.log_exporter.arn
-  handler          = "cloudwatch-to-s3.lambda_handler"
-  source_code_hash = data.archive_file.log_exporter.output_base64sha256
-  timeout          = 300
-
-  runtime = "python3.8"
-
-  environment {
-    variables = {
-      S3_BUCKET = var.cloudwatch_logs_export_bucket,
-      AWS_ACCOUNT = data.aws_caller_identity.current.account_id
-    }
-  }
 }
 
 resource "aws_cloudwatch_event_rule" "log_exporter" {
@@ -132,4 +128,54 @@ resource "aws_lambda_permission" "log_exporter" {
   function_name = aws_lambda_function.log_exporter.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.log_exporter.arn
+}
+
+
+resource "aws_s3_bucket_policy" "allow_access_to_write_logs" {
+  bucket = var.cloudwatch_logs_export_bucket
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "s3:GetBucketAcl",
+      "Effect": "Allow",
+      "Resource": "arn:aws:s3:::${var.cloudwatch_logs_export_bucket}",
+      "Principal": { "Service": "logs.${data.aws_region.current.name}.amazonaws.com" },
+      "Condition": {
+        "StringEquals": {
+          "aws:SourceAccount": [
+            "${data.aws_caller_identity.current.account_id}"
+          ]
+        },
+        "ArnLike": {
+          "aws:SourceArn": [
+            "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:*"
+          ]
+        }
+      }
+    },
+    {
+      "Action": "s3:PutObject" ,
+      "Effect": "Allow",
+      "Resource": "arn:aws:s3:::${var.cloudwatch_logs_export_bucket}/*",
+      "Principal": { "Service": "logs.${data.aws_region.current.name}.amazonaws.com" },
+      "Condition": {
+        "StringEquals": {
+          "s3:x-amz-acl": "bucket-owner-full-control",
+          "aws:SourceAccount": [
+            "${data.aws_caller_identity.current.account_id}"
+          ]
+        },
+        "ArnLike": {
+          "aws:SourceArn": [
+            "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:*"
+          ]
+        }
+      }
+    }
+  ]
+}
+EOF
+
 }
